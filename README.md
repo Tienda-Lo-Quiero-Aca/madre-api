@@ -1,99 +1,142 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# Madre API
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+Microservicio interno de **Tienda Lo Quiero Acá** que guarda y sirve la base **Madre**: el catálogo maestro de productos y los datos que comparten los demás servicios.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+Casi no tiene lógica de negocio propia: es el lugar donde los otros servicios **dejan y consultan** información. Por ejemplo, los pedidos de los marketplaces, el estado de cada publicación, las facturas de Xubio o las ventas que no se pudieron facturar. Lo que sí hace por su cuenta son dos sincronizaciones programadas que mantienen al día el catálogo desde Automeli y desde MercadoLibre.
 
-## Description
+## Qué guarda
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+| | |
+|---|---|
+| **Catálogo madre** | Un registro por SKU (casi siempre el ASIN de Amazon) con título, descripción, categoría, precio, stock, peso, imágenes y estado. |
+| **Publicaciones en marketplaces** | Estado, precio y stock de cada SKU en Megatone, Frávega y OnCity, con su historial y las pausas manuales. |
+| **Publicador** | Las corridas de publicación masiva y el resultado SKU por SKU. |
+| **Marcas y categorías** | La equivalencia entre la marca y la categoría de MercadoLibre y las que exige cada marketplace. |
+| **MercadoLibre** | Copia de las publicaciones propias, sus visitas y el árbol de categorías, con la analítica que se arma encima. |
+| **Pedidos** | Los pedidos de los marketplaces normalizados, sin duplicados, y su avance hacia Flokzu. |
+| **Facturación** | Copia de los comprobantes de Xubio y las ventas que no se pudieron facturar. |
+| **Operación** | La planilla de control de cada venta, las publicaciones de la Central de Promociones, los impuestos por categoría y los usuarios del panel. |
 
-## Project setup
+## Cómo se arma el catálogo
 
-```bash
-$ yarn install
+```mermaid
+flowchart TD
+    ML([MercadoLibre]) --> MA[mercadolibre-api]
+    MA -- publicaciones, visitas<br/>y categorías --> CM[(Copia de MercadoLibre<br/>en Madre)]
+    AM([Automeli]) --> SA[Sync Automeli<br/>cada 6 horas]
+    CM --> IM[Import MercadoLibre<br/>cada 6 horas]
+    SA -- precio, peso,<br/>stock y estado --> PM[(Catálogo madre)]
+    IM -- título, descripción,<br/>imágenes y categoría --> PM
+    PM --> PUB[Publicador y sync<br/>de marketplaces]
+    PUB --> MK([Megatone · Frávega · OnCity])
 ```
 
-## Compile and run the project
+Los dos procesos programados están explicados en [Procesos y estados](docs/procesos.md). Los pedidos y la facturación no pasan por el catálogo: `order-api` e `invoice.api` los guardan directamente. El significado de cada dato está en la [guía funcional](docs/funcional.md).
+
+## Quién la usa
+
+Los servicios que leen y escriben en Madre, según el código de cada uno:
+
+| Servicio | Para qué |
+|---|---|
+| `order-api` | Registra los pedidos de los marketplaces y actualiza su avance (`/api/orders`). |
+| `invoice.api` | Guarda la copia de los comprobantes de Xubio y las ventas que no pudo facturar (`/api/internal/xubio`, `/api/internal/invoice`). |
+| `auth.api` | Guarda los usuarios y las sesiones del panel (`/api/internal/auth`). |
+| `central-promotion-engine` | Consulta y carga las publicaciones de la Central de Promociones. |
+| `spreadsheet.tlq` | Vuelca la planilla de control. |
+| `products.api`, `mercadolibre-api`, `catalog-sync-api`, `madre-ai-matcher` | Catálogo, publicaciones de MercadoLibre, sincronización con marketplaces y equivalencia de marcas. |
+| `front-tlq`, `panel-admin` | Paneles: analítica, favoritos, publicador e issues de facturación. |
+
+## Ambientes
+
+| Ambiente | URL base |
+|---|---|
+| Producción | `https://api.madre.loquieroaca.com` |
+| Local | `http://localhost:3000` |
+
+Todos los endpoints van bajo el prefijo `/api`. Además, el servicio publica:
+
+| Herramienta | Ruta | Para qué |
+|---|---|---|
+| Documentación | `/docs` | Esta documentación, navegable y con buscador. |
+| Swagger | `/api/docs` | Probar los endpoints desde el navegador. |
+
+## Autenticación
+
+Los grupos de endpoints internos piden este header:
+
+| Header | Valor |
+|---|---|
+| `x-internal-api-key` | La clave interna del servicio (`INTERNAL_API_KEY`). |
+
+Sin el header la respuesta es `401 Internal API key missing`, y con una clave incorrecta, `401 Invalid internal API key`. **No todos los endpoints lo piden**: la [referencia de la API](docs/api.md) indica en cada grupo si hace falta.
+
+## Primer llamado
+
+Consultar precio, stock, peso y estado de dos SKUs del catálogo:
 
 ```bash
-# development
-$ yarn run start
-
-# watch mode
-$ yarn run start:dev
-
-# production mode
-$ yarn run start:prod
+curl -s -X POST "https://api.madre.loquieroaca.com/api/products/madre/status/bulk" \
+  -H "Content-Type: application/json" \
+  -d '{"skus":["B0953HLGJ3","B09GK544PP"]}'
 ```
 
-## Run tests
+```json
+{
+  "items": [
+    { "sku": "B0953HLGJ3", "price": 150000, "amazonPrice": 89.99, "maxWeight": 1.2, "stock": 5, "status": "active" },
+    { "sku": "B09GK544PP", "price": 0, "amazonPrice": null, "maxWeight": null, "stock": 0, "status": null }
+  ],
+  "total": 2
+}
+```
+
+Un SKU que no está en el catálogo vuelve igual, con precio y stock en cero y estado `null`.
+
+## Documentación
+
+**Funcional**
+
+| Documento | Qué explica |
+|---|---|
+| [Guía funcional](docs/funcional.md) | Qué guarda Madre en cada área, de dónde sale cada dato y qué reglas aplica. |
+| [Procesos y estados](docs/procesos.md) | Las sincronizaciones automáticas del catálogo y el significado de cada estado: productos, publicaciones, publicador, pedidos y facturación. |
+
+**API**
+
+| Documento | Qué explica |
+|---|---|
+| [Referencia de la API](docs/api.md) | Todos los endpoints agrupados por área, con parámetros, valores por defecto, errores y ejemplos. |
+
+**Técnico**
+
+| Documento | Qué explica |
+|---|---|
+| [Arquitectura y configuración](docs/tecnico.md) | Capas del código, base de datos, Redis, integraciones, variables de entorno y limitaciones conocidas. |
+| [Operación](docs/operacion.md) | Deploy, verificación y qué hacer ante los problemas más frecuentes. |
+
+## Desarrollo local
+
+Requisitos: Node.js 20 o superior, acceso a la base MySQL y un Redis con TLS (el servicio no arranca sin Redis).
 
 ```bash
-# unit tests
-$ yarn run test
-
-# e2e tests
-$ yarn run test:e2e
-
-# test coverage
-$ yarn run test:cov
+npm install
+cp .env.example .env    # completar las credenciales
+npm run start:dev       # http://localhost:3000/api
 ```
-
-## Deployment
-
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
-
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
 
 ```bash
-$ yarn install -g @nestjs/mau
-$ mau deploy
+npm test                # tests unitarios
+npm run lint            # eslint con --fix
+npx tsc --noEmit        # chequeo de tipos
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+Para ver la documentación como sitio, sin base de datos ni Redis:
 
-## Resources
+```bash
+npm run docs:preview    # http://localhost:4310/docs
+```
 
-Check out a few resources that may come in handy when working with NestJS:
+## Stack
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
-
-## Support
-
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
-
-## Stay in touch
-
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
-
-## License
-
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
-# trigger ci
+NestJS 11 · TypeScript · MySQL (TypeORM, con SQL directo) · Redis (ioredis) · Axios · Jest.

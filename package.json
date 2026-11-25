@@ -22,7 +22,8 @@
     "test:e2e": "jest --config ./test/jest-e2e.json",
     "sync:once": "ts-node -r tsconfig-paths/register src/cli/run-automeli-sync.ts",
     "sync:products": "ts-node -r tsconfig-paths/register src/cli/run-product-sync.ts",
-    "sync:weights:once": "ts-node -r tsconfig-paths/register src/cli/run-automeli-weight-backfill.ts"
+    "sync:weights:once": "ts-node -r tsconfig-paths/register src/cli/run-automeli-weight-backfill.ts",
+    "docs:preview": "ts-node --transpile-only scripts/preview-docs-site.ts"
   },
   "dependencies": {
     "@nestjs/cache-manager": "^3.1.0",
