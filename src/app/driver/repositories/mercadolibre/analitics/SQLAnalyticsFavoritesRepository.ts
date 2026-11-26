@@ -225,7 +225,7 @@ WHERE t1.marketplace_id = ?
       stock: 'p.stock'
     };
 
-    let orderBy = 'ORDER BY p.id DESC';
+    let orderBy = 'ORDER BY mf.product_id DESC';
 
     if (filters?.sortBy && allowedSortFields[filters.sortBy]) {
       const direction = filters.sortOrder?.toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
@@ -235,10 +235,15 @@ WHERE t1.marketplace_id = ?
 
     // ================= TOTAL COUNT =================
 
+    // La carpeta es lo que se guardo en marketplace_favorite_products (MLA + SKU
+    // del archivo). mercadolibre_products ya no es la fuente del catalogo
+    // (lo es Catalog Sync): con INNER JOIN, los MLA que esa tabla no tenia no
+    // aparecian en la carpeta y products.api tampoco los publicaba. Queda como
+    // LEFT JOIN solo para completar los datos de vista mientras existan.
     const countSql = `
     SELECT COUNT(*) as total
     FROM marketplace_favorite_products mf
-    INNER JOIN mercadolibre_products p
+    LEFT JOIN mercadolibre_products p
       ON p.id = mf.product_id
     LEFT JOIN mercadolibre_item_visits v
       ON v.item_id = p.id
@@ -252,7 +257,7 @@ WHERE t1.marketplace_id = ?
 
     const sql = `
     SELECT
-      p.id,
+      mf.product_id AS id,
       p.title,
       p.thumbnail,
       p.price,
@@ -260,10 +265,10 @@ WHERE t1.marketplace_id = ?
       p.sold_quantity AS soldQuantity,
       p.brand,
       p.category_id AS categoryId,
-      p.seller_sku,
+      mf.seller_sku,
       COALESCE(v.total_visits, 0) AS visits
     FROM marketplace_favorite_products mf
-    INNER JOIN mercadolibre_products p
+    LEFT JOIN mercadolibre_products p
       ON p.id = mf.product_id
     LEFT JOIN mercadolibre_item_visits v
       ON v.item_id = p.id
